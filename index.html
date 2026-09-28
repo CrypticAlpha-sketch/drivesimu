@@ -267,7 +267,7 @@ li.done .stamp{opacity:.92;}
     <summary>操作のしかた</summary>
     <dl>
      <dt>ハンドル（左下）</dt><dd>指をのせて、くるっと回します。手をはなすと少しずつまっすぐに戻ります。</dd>
-     <dt>傾けてハンドル（設定で切りかえ）</dt><dd>スマホをハンドルのように左右へ傾けます。約25°でハンドル1回転ぶん。ハンドルの絵をタップすると、いまの傾きが「まっすぐ」になります。</dd>
+     <dt>傾けてハンドル（設定で切りかえ）</dt><dd>スマホをハンドルのように左右へ傾けます。傾けるほど大きく曲がります（感度「ふつう」で約35°がハンドル1回転ぶん）。感度は設定と一時停止画面で変えられます。ハンドルの絵をタップすると、いまの傾きが「まっすぐ」になります。</dd>
      <dt>アクセル（右端の細いペダル）</dt><dd>押すと「軽く」踏みます。押したまま指を下にずらすほど、強く踏みます。</dd>
      <dt>ブレーキ（アクセルの左の広いペダル）</dt><dd>使い方はアクセルと同じ。強く止まりたいときは下にずらします。</dd>
      <dt>シフト（P・R・N・D）</dt><dd>ブレーキを押したまま切り替えます。前に進むのは D。</dd>
@@ -291,6 +291,7 @@ li.done .stamp{opacity:.92;}
     <div class="set"><span>効果音（エンジンなど）</span><div class="seg" data-k="sound"><button data-v="1">あり</button><button data-v="0">なし</button></div></div>
     <div class="set"><span>ハンドル操作</span><div class="seg" data-k="tilt"><button data-v="0">指で回す</button><button data-v="1">スマホを傾ける</button></div></div>
     <p id="tiltMsg" class="tmsg" hidden></p>
+    <div class="set" id="tiltSensRow"><span>傾きの感度</span><div class="seg" data-k="tiltS"><button data-v="0">低め</button><button data-v="1">ふつう</button><button data-v="2">高め</button></div></div>
     <div class="set"><span>「今ハンドル！」の合図</span><div class="seg" data-k="coach"><button data-v="1">あり</button><button data-v="0">なし</button></div></div>
     <div class="set"><span>ほかの車の数</span><div class="seg" data-k="traffic"><button data-v="5">少なめ</button><button data-v="10">ふつう</button><button data-v="16">多め</button></div></div>
     <div class="set"><span>車の色</span><div class="sw" id="colors"></div></div>
@@ -304,9 +305,10 @@ li.done .stamp{opacity:.92;}
    <h2>一時停止中</h2>
    <div class="breath" aria-hidden="true"></div>
    <p style="text-align:center">円が大きくなるときに吸って、小さくなるときにゆっくり吐きましょう。</p>
+   <div class="set" id="pTilt" hidden><span>傾きの感度</span><div class="seg" data-k="tiltS"><button data-v="0">低め</button><button data-v="1">ふつう</button><button data-v="2">高め</button></div></div>
    <div class="btns">
     <button class="btn pri" id="bResume">つづける</button>
-    <button class="btn" id="bRestart">最初からやり直す</button>
+    <button class="btn" id="bRestart">やり直す</button>
     <button class="btn" id="bMenu">レッスン一覧へ</button>
    </div>
   </div>
@@ -1089,11 +1091,14 @@ const P={x:0,y:0,h:0,v:0,wheel:0,gear:'P',blink:0,hold:false,acc:0,curb:false,ar
 const IN={thr:0,brk:0,held:false,relT:0,k:{},lookY:0,lookP:0,look:false};
 const $=id=>document.getElementById(id);
 let car=null;
-const settings=Object.assign({voice:1,sound:1,coach:1,traffic:10,color:0xf2f2ee,tilt:0},store.get('settings',{}));
+const settings=Object.assign({voice:1,sound:1,coach:1,traffic:10,color:0xf2f2ee,tilt:0,tiltS:1},store.get('settings',{}));
 function saveSettings(){store.set('settings',settings);}
 
 /* 傾きハンドル：重力の向きから、画面の面内の傾き（ロール）を求める */
-const TILT={on:false,listening:false,ok:false,valid:false,raw:0,off:0,wait:false,waitT:0,sa:null,RMAX:35,DZ:1.5,to:0};
+const TILT={on:false,listening:false,ok:false,valid:false,raw:0,off:0,wait:false,waitT:0,sa:null,to:0};
+/* 感度：RMAX=ハンドルいっぱいまでの傾き(°)、DZ=遊び(°)、EXP=中央付近のおだやかさ */
+const TILT_LV=[{RMAX:50,DZ:3,EXP:1.8},{RMAX:45,DZ:2,EXP:1.5},{RMAX:35,DZ:1.5,EXP:1.25}];
+const tiltLv=()=>TILT_LV[settings.tiltS]||TILT_LV[1];
 const wrap180=a=>((a+180)%360+360)%360-180;
 function screenAngle(){
   if(TILT.sa!=null)return TILT.sa;
@@ -1109,7 +1114,7 @@ function onOrient(e){
 }
 const tiltActive=()=>TILT.on&&TILT.ok;
 const tiltRoll=()=>wrap180(TILT.raw-TILT.off);
-function tiltTarget(){const r=tiltRoll(),a=Math.abs(r);if(a<TILT.DZ)return 0;return Math.sign(r)*WMAX*Math.pow(Math.min(1,(a-TILT.DZ)/(TILT.RMAX-TILT.DZ)),1.25);}
+function tiltTarget(){const L=tiltLv(),r=tiltRoll(),a=Math.abs(r);if(a<L.DZ)return 0;return Math.sign(r)*WMAX*Math.pow(Math.min(1,(a-L.DZ)/(L.RMAX-L.DZ)),L.EXP);}
 function tiltMsg(t){const el=$('tiltMsg');if(!el)return;el.textContent=t;el.hidden=!t;}
 function tiltFail(msg){TILT.on=false;clearTimeout(TILT.to);settings.tilt=0;saveSettings();try{renderMenu();}catch(e){}tiltMsg(msg);if(running)toast(msg,'warn');}
 function enableTilt(){
@@ -1147,7 +1152,7 @@ function stepPlayer(dt){
   if(IN.k.right)P.wheel=clamp(P.wheel+340*dt,-WMAX,WMAX);
   if(tiltActive()&&!(IN.k.left||IN.k.right)){
     if(TILT.wait&&SIMT-TILT.waitT>0.3&&TILT.valid&&Math.abs(tiltRoll())<8)TILT.wait=false;
-    if(!TILT.wait&&TILT.valid)P.wheel+=(tiltTarget()-P.wheel)*(1-Math.exp(-dt*14));
+    if(!TILT.wait&&TILT.valid)P.wheel+=(tiltTarget()-P.wheel)*(1-Math.exp(-dt*10));
     else P.wheel=toward(P.wheel,0,(25+42*Math.abs(P.v))*dt);
   }else if(!(IN.held||IN.k.left||IN.k.right)&&SIMT-IN.relT>0.25)P.wheel=toward(P.wheel,0,(25+42*Math.abs(P.v))*dt);
   if(P.blink){const turned=-P.wheel*P.blink;if(turned>170)P.armed=true;else if(P.armed&&turned<35){P.blink=0;P.armed=false;sfx.tick(true);}}
@@ -1684,6 +1689,7 @@ function respawn(){
 
 /* ================= 画面 ================= */
 const PCOLS=[[0xf2f2ee,'ホワイト'],[0x1f2328,'ブラック'],[0xb8bcc1,'シルバー'],[0x6f8ba3,'ブルーグレー'],[0xd8c7a6,'ベージュ'],[0x86a08e,'グリーン'],[0xe2b4b1,'ピンク']];
+function syncSegs(){document.querySelectorAll('.seg[data-k]').forEach(sg=>{const k=sg.dataset.k;sg.querySelectorAll('button').forEach(b=>b.classList.toggle('on',String(settings[k])===b.dataset.v));});}
 function renderMenu(){
   const cl=store.get('cleared',{}),ol=$('lessons');ol.innerHTML='';
   for(const L of LESSONS){
@@ -1693,7 +1699,7 @@ function renderMenu(){
     li.querySelector('button').addEventListener('click',()=>{audio.unlock();if(settings.tilt&&!TILT.on)enableTilt();startLesson(L.id);});
     ol.appendChild(li);
   }
-  document.querySelectorAll('#settings .seg').forEach(sg=>{const k=sg.dataset.k;sg.querySelectorAll('button').forEach(b=>b.classList.toggle('on',String(settings[k])===b.dataset.v));});
+  syncSegs();$('tiltSensRow').hidden=!settings.tilt;
   const cs=$('colors');cs.innerHTML='';
   for(const [c,name] of PCOLS){const b=document.createElement('button');b.style.background='#'+c.toString(16).padStart(6,'0');b.setAttribute('aria-label',name);if(c===settings.color)b.className='on';
     b.addEventListener('click',()=>{settings.color=c;saveSettings();rebuildCar();renderMenu();});cs.appendChild(b);}
@@ -1722,16 +1728,16 @@ function showResult(ok,msg){
 function bindUI(){
   $('bView').addEventListener('click',cycleView);
   $('card').addEventListener('click',()=>$('card').classList.toggle('min'));
-  $('bPause').addEventListener('click',()=>{if(!running||LS.over)return;paused=true;voice.stop();$('pause').hidden=false;});
+  $('bPause').addEventListener('click',()=>{if(!running||LS.over)return;paused=true;voice.stop();$('pTilt').hidden=!tiltActive();syncSegs();$('pause').hidden=false;});
   $('bResume').addEventListener('click',()=>{$('pause').hidden=true;paused=false;audio.unlock();});
   $('bRestart').addEventListener('click',()=>{audio.unlock();startLesson(LS.lesson.id);});
   $('bMenu').addEventListener('click',showMenu);
   $('rRetry').addEventListener('click',()=>{audio.unlock();startLesson(LS.lesson.id);});
   $('rNext').addEventListener('click',()=>{audio.unlock();startLesson(LS.lesson.id+1);});
   $('rMenu').addEventListener('click',showMenu);
-  document.querySelectorAll('#settings .seg').forEach(sg=>{const k=sg.dataset.k;sg.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
+  document.querySelectorAll('.seg[data-k]').forEach(sg=>{const k=sg.dataset.k;sg.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
     settings[k]=+b.dataset.v;saveSettings();renderMenu();if(k==='tilt'){if(settings.tilt){TILT.off=0;enableTilt();}else disableTilt();}if(k==='voice'&&settings.voice)voice.say('音声ガイドをオンにしました');if(k==='sound'){audio.unlock();if(settings.sound)sfx.chime();}});});
-  document.addEventListener('visibilitychange',()=>{if(document.hidden&&running&&!paused&&!LS.over){paused=true;voice.stop();$('pause').hidden=false;}});
+  document.addEventListener('visibilitychange',()=>{if(document.hidden&&running&&!paused&&!LS.over){paused=true;voice.stop();$('pTilt').hidden=!tiltActive();syncSegs();$('pause').hidden=false;}});
   document.addEventListener('contextmenu',e=>{if(!e.target.closest('.screen'))e.preventDefault();});
 }
 
