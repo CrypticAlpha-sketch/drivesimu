@@ -270,7 +270,7 @@ li.done .stamp{opacity:.92;}
      <dt>傾けてハンドル（設定で切りかえ）</dt><dd>スマホをハンドルのように左右へ傾けます。傾けるほど大きく曲がります（感度「ふつう」で約35°がハンドル1回転ぶん）。感度は設定と一時停止画面で変えられます。ハンドルの絵をタップすると、いまの傾きが「まっすぐ」になります。</dd>
      <dt>アクセル（右端の細いペダル）</dt><dd>押すと「軽く」踏みます。押したまま指を下にずらすほど、強く踏みます。</dd>
      <dt>ブレーキ（アクセルの左の広いペダル）</dt><dd>使い方はアクセルと同じ。強く止まりたいときは下にずらします。</dd>
-     <dt>シフト（P・R・N・D）</dt><dd>ブレーキを押したまま切り替えます。前に進むのは D。</dd>
+     <dt>シフト（P・R・N・D）</dt><dd>ブレーキを指で押したまま、別の指でタップして切り替えます。前に進むのは D。</dd>
      <dt>ウインカー（◀ ▶）</dt><dd>タップで点滅。曲がり終えてハンドルを戻すと、自動で消えます。</dd>
      <dt>見回す・視点</dt><dd>運転席視点では、画面をなぞると左右を見られます。右上のボタンで「運転席・後ろから・上から」を切り替え。</dd>
      <dt>向き</dt><dd>スマホは横向きがいちばん見やすいです。縦向きでも使えます。</dd>
@@ -1249,6 +1249,13 @@ function bindPedal(id,key,base,min){
   const up=e=>{if(e.pointerId!==pid)return;pid=null;IN[key]=0;};
   el.addEventListener('pointerup',up);el.addEventListener('pointercancel',up);
 }
+/* 運転中のボタンは、別の指でペダルを押していても反応するよう「触れた瞬間」で受ける。
+   （2本目の指のタップでは click が発生しない端末が多いため）。キーボード操作の click も受ける */
+function onPress(el,fn){
+  let t=-1e9;
+  el.addEventListener('pointerdown',e=>{if(e.button>0)return;e.preventDefault();t=performance.now();fn(e);});
+  el.addEventListener('click',e=>{if(performance.now()-t<1500){t=-1e9;return;}fn(e);});
+}
 function bindInput(){
   const wh=$('wheel');let wid=null,last=0,cx=0,cy=0;
   wh.addEventListener('pointerdown',e=>{e.preventDefault();if(tiltActive()){tiltRecenter();return;}const r=wh.getBoundingClientRect();cx=r.left+r.width/2;cy=r.top+r.height/2;
@@ -1258,8 +1265,8 @@ function bindInput(){
   const wup=e=>{if(e.pointerId!==wid)return;wid=null;IN.held=false;IN.relT=SIMT;};
   wh.addEventListener('pointerup',wup);wh.addEventListener('pointercancel',wup);
   bindPedal('pA','thr',0.2,0.05);bindPedal('pB','brk',0.3,0.1);
-  document.querySelectorAll('#shift button').forEach(b=>b.addEventListener('click',()=>shift(b.dataset.g)));
-  $('bL').addEventListener('click',()=>toggleBlink(1));$('bR').addEventListener('click',()=>toggleBlink(-1));
+  document.querySelectorAll('#shift button').forEach(b=>onPress(b,()=>shift(b.dataset.g)));
+  onPress($('bL'),()=>toggleBlink(1));onPress($('bR'),()=>toggleBlink(-1));
   const gl=$('gl');let lid=null,lx=0,ly=0;
   gl.addEventListener('pointerdown',e=>{if(view!==0)return;lid=e.pointerId;lx=e.clientX;ly=e.clientY;IN.look=true;try{gl.setPointerCapture(lid);}catch(_){}});
   gl.addEventListener('pointermove',e=>{if(e.pointerId!==lid)return;IN.lookY=clamp(IN.lookY+(e.clientX-lx)*0.32*DEG,-110*DEG,110*DEG);IN.lookP=clamp(IN.lookP+(e.clientY-ly)*0.18*DEG,-18*DEG,14*DEG);lx=e.clientX;ly=e.clientY;});
@@ -1282,9 +1289,9 @@ function bindInput(){
 function shift(g){
   if(g===P.gear)return;
   const stopped=Math.abs(P.v)<0.3,brk=brkIn()>0.05||P.hold;
-  if(P.gear==='P'&&!brk){toast('ブレーキを押したまま、シフトを動かしましょう','warn');voice.say('ブレーキを押したまま、シフトを動かしましょう');return;}
+  if(P.gear==='P'&&!brk){const m='ブレーキを指で押したまま、別の指で「'+g+'」をタップしましょう';toast(m,'warn');voice.say(m);return;}
   if((g==='R'&&P.v>0.4)||(g==='D'&&P.v<-0.4)||(g==='P'&&!stopped)){toast('止まってからシフトしましょう','warn');return;}
-  if((g==='R'||g==='D')&&P.gear!=='N'&&!brk){toast('ブレーキを押したまま、シフトを動かしましょう','warn');return;}
+  if((g==='R'||g==='D')&&P.gear!=='N'&&!brk){toast('ブレーキを指で押したまま、別の指で「'+g+'」をタップしましょう','warn');return;}
   P.gear=g;sfx.tick(false);
 }
 function toggleBlink(d){P.blink=P.blink===d?0:d;P.armed=false;sfx.tick(true);}
@@ -1534,7 +1541,7 @@ const LESSONS=[
 {id:1,title:'発進と止まる',sub:'クリープとブレーキに慣れる',
  setup(){setPlayer(-135,-48.5,0,'P',false);SIG.forced['1,1']=['R','G'];},
  steps:[
-  {text:'ブレーキを押したまま、シフトを「D」に入れましょう。ブレーキは右下の、幅の広いペダルです。',check:()=>P.gear==='D'},
+  {text:'ブレーキ（右下の、幅の広いペダル）を指で押したまま、別の指でシフトの「D」をタップしましょう。',check:()=>P.gear==='D'},
   {text:'ブレーキから、ゆっくり指を離してみましょう。アクセルを踏まなくても、車はゆっくり進みます。これが「クリープ」です。',check:()=>kmh()>2.5},
   {text:'アクセル（右端の細いペダル）を押して、20km/hまで加速しましょう。押したまま指を少し下へずらすと、強く踏めます。',band:[18,30],check:()=>kmh()>=18},
   {text:'前の信号は赤です。アクセルを離して、ブレーキで停止線の手前に止まりましょう。',
@@ -1726,9 +1733,9 @@ function showResult(ok,msg){
   voice.say(ok?'よくできました':'大丈夫。もう一度やってみましょう');
 }
 function bindUI(){
-  $('bView').addEventListener('click',cycleView);
-  $('card').addEventListener('click',()=>$('card').classList.toggle('min'));
-  $('bPause').addEventListener('click',()=>{if(!running||LS.over)return;paused=true;voice.stop();$('pTilt').hidden=!tiltActive();syncSegs();$('pause').hidden=false;});
+  onPress($('bView'),cycleView);
+  onPress($('card'),()=>$('card').classList.toggle('min'));
+  onPress($('bPause'),()=>{if(!running||LS.over)return;paused=true;voice.stop();$('pTilt').hidden=!tiltActive();syncSegs();$('pause').hidden=false;});
   $('bResume').addEventListener('click',()=>{$('pause').hidden=true;paused=false;audio.unlock();});
   $('bRestart').addEventListener('click',()=>{audio.unlock();startLesson(LS.lesson.id);});
   $('bMenu').addEventListener('click',showMenu);
